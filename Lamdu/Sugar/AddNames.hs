@@ -20,7 +20,6 @@ import Data.Traversable (Traversable, traverse)
 import Lamdu.Sugar.AddNames.CPS (CPS(..))
 import Lamdu.Sugar.AddNames.NameGen (NameGen)
 import Lamdu.Sugar.Types
-import Prelude hiding (pi)
 import qualified Control.Lens as Lens
 import qualified Control.Monad.Trans.Reader as Reader
 import qualified Control.Monad.Trans.Writer as Writer
