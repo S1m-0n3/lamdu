@@ -27,6 +27,7 @@ import qualified Lamdu.Data.Expr.Utils as ExprUtils
 import qualified Lamdu.Data.Infer as Infer
 import qualified Lamdu.Data.Infer.Context as Context
 import qualified Lamdu.Data.Infer.Deref as Deref
+import qualified Lamdu.Data.Infer.GuidAliases as GuidAliases
 import qualified Lamdu.Data.Infer.LamWrap as LamWrap
 import qualified Lamdu.Data.Infer.Load as Load
 import qualified Lamdu.Data.Infer.Monad as InferM
@@ -85,7 +86,9 @@ onEachHole ::
 onEachHole def tv@(TypedValue valRef _) = do
   iValData <- lift . lift . Lens.zoom Context.ufExprs $ UFData.read valRef
   when (isUnrestrictedHole iValData) $ do
-    paramId <- state random
+    paramGuid <- state random
+    paramId <- lift . lift . Lens.zoom Context.guidAliases $
+      GuidAliases.getRep paramGuid
     -- Make a new type ref for the implicit (we can't just re-use the
     -- given tv type ref because we need to intersect/restrict its
     -- scope)
@@ -98,7 +101,7 @@ onEachHole def tv@(TypedValue valRef _) = do
       >>= lift . lift . LamWrap.lambdaWrap paramId implicitTypeRef
       -- TODO: Is it OK that we use same AutoGen/guid for new Lam and
       -- new ParamType in here?
-      <&> Lens.mapped . Lens._2 %~ joinPayload . toPayload paramId
+      <&> Lens.mapped . Lens._2 %~ joinPayload . toPayload paramGuid
       >>= lift . State.put
     varScope <-
       lift . lift . Lens.zoom Context.ufExprs $

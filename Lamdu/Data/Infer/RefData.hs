@@ -21,7 +21,6 @@ import Data.DeriveTH (derive)
 import Data.Monoid (Monoid(..))
 import Data.Monoid.Instances () -- Binary Any
 import Data.Set (Set)
-import Data.Store.Guid (Guid)
 import Data.Typeable (Typeable)
 import Data.UnionFind.WithData (UFData)
 import Lamdu.Data.Infer.GuidAliases (GuidAliases)
@@ -65,8 +64,8 @@ derive makeBinary ''LoadedDef
 instance Eq def => Eq (LoadedDef def) where
   LoadedDef a _ == LoadedDef b _ = a == b
 
-type LoadedBody def = Expr.Body (LoadedDef def) Guid
-type LoadedExpr def = Expr.Expr (LoadedDef def) Guid
+type LoadedBody def = Expr.Body (LoadedDef def) (ParamRef def)
+type LoadedExpr def = Expr.Expr (LoadedDef def) (ParamRef def)
 
 data RefData def = RefData
   { _rdScope :: Scope def

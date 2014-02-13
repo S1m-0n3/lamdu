@@ -10,7 +10,6 @@ import Data.Foldable (sequenceA_, traverse_)
 import Data.List (partition)
 import Data.Maybe.Utils (unsafeUnjust)
 import Data.Monoid (Monoid(..))
-import Data.Store.Guid (Guid)
 import Data.Traversable (sequenceA, traverse)
 import Lamdu.Data.Infer.Monad (Infer)
 import Lamdu.Data.Infer.RefTags (ExprRef, ParamRef, TagExpr, RuleRef)
@@ -35,15 +34,14 @@ import qualified Lamdu.Data.Infer.Unify as Unify
 unify :: Ord def => ExprRef def -> ExprRef def -> RuleMonad.RM rule def (ExprRef def)
 unify x y = RuleMonad.liftInfer $ Unify.unify x y
 
-remapSubstGuid :: Guid -> RuleMonad.RM (Rule.Apply def) def Guid
-remapSubstGuid srcGuid = do
-  srcRep <- RuleMonad.liftInfer . InferM.liftGuidAliases $ GuidAliases.getRep srcGuid
+remapSubstParam :: ParamRef def -> RuleMonad.RM (Rule.Apply def) def (ParamRef def)
+remapSubstParam srcParam = do
+  srcRep <- RuleMonad.liftInfer . InferM.liftGuidAliases $ GuidAliases.find srcParam
   (_, mDstRef) <-
     Lens.zoom Rule.aLinkedNames $
     OR.refMapUnmaintainedLookup
     (lift . InferM.liftGuidAliases . GuidAliases.find) srcRep
   RuleMonad.liftInfer . InferM.liftGuidAliases $
-    State.gets . GuidAliases.guidOfRep =<<
     maybe (return srcRep) GuidAliases.find mDstRef
 
 findRep :: ExprRef def -> RuleMonad.RM rule def (ExprRef def)
@@ -111,8 +109,8 @@ link ruleRef srcRef dstRef dstAncestors = do
       void $ unify dstRef oldDestRef
     Nothing -> do
       Rule.aLinkedExprs <>= OR.refMapSingleton srcRef (Rule.ExprLink dstRef dstAncestors)
-      piGuidRep <- RuleMonad.liftInfer . InferM.liftGuidAliases . GuidAliases.getRep =<< Lens.use Rule.aPiGuid
-      RuleMonad.liftInfer $ addPiResultTriggers ruleRef piGuidRep srcRef dstRef
+      piParamRep <- RuleMonad.liftInfer . InferM.liftGuidAliases . GuidAliases.find =<< Lens.use Rule.aPiParam
+      RuleMonad.liftInfer $ addPiResultTriggers ruleRef piParamRep srcRef dstRef
 
 makePiResultCopy ::
   Ord def =>
@@ -126,16 +124,16 @@ makePiResultCopy ruleRef srcRef (Rule.ExprLink destRef destAncestors)
   srcBody <- RuleMonad.liftInfer . InferM.liftUFExprs $ (^. RefData.rdBody) <$> UFData.read srcRef
   destScope <- RuleMonad.liftInfer . InferM.liftUFExprs $ (^. RefData.rdScope) <$> UFData.read destRef
   case srcBody of
-    Expr.BodyLam (Expr.Lam k srcGuid _ _) -> do
-      (destGuid, _, _) <- RuleMonad.liftInfer $ forceLam k destScope destRef
-      srcNameRep <- RuleMonad.liftInfer . InferM.liftGuidAliases $ GuidAliases.getRep srcGuid
-      destNameRep <- RuleMonad.liftInfer . InferM.liftGuidAliases $ GuidAliases.getRep destGuid
+    Expr.BodyLam (Expr.Lam k srcParam _ _) -> do
+      (destParam, _, _) <- RuleMonad.liftInfer $ forceLam k destScope destRef
+      srcNameRep <- RuleMonad.liftInfer . InferM.liftGuidAliases $ GuidAliases.find srcParam
+      destNameRep <- RuleMonad.liftInfer . InferM.liftGuidAliases $ GuidAliases.find destParam
       Rule.aLinkedNames . Lens.at srcNameRep .= Just destNameRep
     _ -> do
       destBodyRef <-
         srcBody
         & Lens.traverse %%~ (const . RuleMonad.liftInfer . InferM.liftContext) (Context.freshHole destScope)
-        >>= ExprLens.bodyParameterRef %%~ remapSubstGuid
+        >>= ExprLens.bodyParameterRef %%~ remapSubstParam
         >>= RuleMonad.liftInfer . InferM.liftContext . Context.fresh destScope
       void $ unify destBodyRef destRef -- destBodyRef is swallowed by destRef if it had anything...
   destBody <- RuleMonad.liftInfer . InferM.liftUFExprs $ (^. RefData.rdBody) <$> UFData.read destRef
@@ -207,15 +205,15 @@ execute ruleRef =
       where
         (unifies, others) = partition (Lens.has (Lens._2 . Trigger._FiredUnify)) triggers
 
-make :: Guid -> ExprRef def -> ExprRef def -> ExprRef def -> Infer def ()
-make piGuid argValRef piResultRef applyTypeRef = do
+make :: ParamRef def -> ExprRef def -> ExprRef def -> ExprRef def -> Infer def ()
+make piParam argValRef piResultRef applyTypeRef = do
+  piParamRep <- InferM.liftGuidAliases $ GuidAliases.find piParam
   ruleRef <-
     InferM.liftRuleMap . Rule.new $
     Rule.RuleApply Rule.Apply
-    { Rule._aPiGuid = piGuid
+    { Rule._aPiParam = piParamRep
     , Rule._aArgVal = argValRef
     , Rule._aLinkedExprs = OR.refMapSingleton piResultRef (Rule.ExprLink applyTypeRef mempty)
     , Rule._aLinkedNames = OR.refMapEmpty
     }
-  piGuidRep <- InferM.liftGuidAliases $ GuidAliases.getRep piGuid
-  addPiResultTriggers ruleRef piGuidRep piResultRef applyTypeRef
+  addPiResultTriggers ruleRef piParamRep piResultRef applyTypeRef

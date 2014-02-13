@@ -6,11 +6,10 @@ import Control.Lens.Operators
 import Control.Monad.Trans.State (StateT)
 import Control.MonadA (MonadA)
 import Data.Foldable (traverse_)
-import Data.Store.Guid (Guid)
 import Lamdu.Data.Infer.Context (Context)
 import Lamdu.Data.Infer.Load (LoadedExpr)
 import Lamdu.Data.Infer.Monad (Infer)
-import Lamdu.Data.Infer.RefTags (ExprRef, TagParam)
+import Lamdu.Data.Infer.RefTags (ExprRef, ParamRef, TagParam)
 import Lamdu.Data.Infer.TypedValue (TypedValue(..))
 import qualified Control.Lens as Lens
 import qualified Data.OpaqueRef as OR
@@ -41,7 +40,7 @@ addDefScope def newScopeMap = do
 -- Only call on a "root" ref that has no parents (otherwise the scope
 -- which should be an intersection is wrong):
 lamWrapRef ::
-  Ord def => Guid -> ExprRef def -> RefData.Scope def ->
+  Ord def => ParamRef def -> ExprRef def -> RefData.Scope def ->
   Expr.Kind -> ExprRef def -> Infer def (ExprRef def)
 lamWrapRef paramId paramTypeRef scope k defRef = do
   defRep <- InferM.liftUFExprs $ UFData.find defRef
@@ -50,7 +49,7 @@ lamWrapRef paramId paramTypeRef scope k defRef = do
 
 lambdaWrap ::
   Ord def =>
-  Guid -> ExprRef def ->
+  ParamRef def -> ExprRef def ->
   LoadedExpr def (TypedValue def, a) ->
   StateT (Context def) (Either (InferM.Error def))
   (LoadedExpr def (TypedValue def, Maybe a))
@@ -69,18 +68,18 @@ lambdaWrap paramId paramTypeRef expr = InferMRun.run $ do
         RefData.Scope scopMap _ | not $ OR.refMapNull scopMap ->
           error "Cannot lamWrap: Root of definition has elements in scope?!"
         RefData.Scope _ (Just def) -> def
-  paramIdRep <- InferM.liftGuidAliases $ GuidAliases.getRep paramId
+  paramIdRep <- InferM.liftGuidAliases $ GuidAliases.find paramId
   InferM.liftContext . addDefScope rootDef $
     OR.refMapSingleton paramIdRep paramTypeRef
   typeRef <- InferM.liftContext . Context.fresh rootScope $ ExprLens.bodyType # ()
   let
     paramTypeSTVExpr =
       mkRootExpr (ExprLens.bodyHole # ()) $ TypedValue paramTypeRef typeRef
-    wrap = lamWrapRef paramId paramTypeRef rootScope
+    wrap = lamWrapRef paramIdRep paramTypeRef rootScope
   lambdaRef <- wrap Expr.KVal rootValRef
   piRef <- wrap Expr.KType rootTypRef
   return .
-    mkRootExpr (ExprUtil.makeLam Expr.KVal paramId paramTypeSTVExpr (expr <&> Lens._2 %~ Just)) $
+    mkRootExpr (ExprUtil.makeLam Expr.KVal paramIdRep paramTypeSTVExpr (expr <&> Lens._2 %~ Just)) $
     TypedValue lambdaRef piRef
   where
     TypedValue rootValRef rootTypRef =

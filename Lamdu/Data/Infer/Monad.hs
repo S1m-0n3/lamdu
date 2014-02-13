@@ -15,12 +15,11 @@ import Control.Monad.Trans.Class (MonadTrans(..))
 import Control.Monad.Trans.State (StateT(..))
 import Control.Monad.Trans.Writer (WriterT(..))
 import Data.Monoid (Monoid(..))
-import Data.Store.Guid (Guid)
 import Lamdu.Data.Expr.Utils () -- Expr.Body Show instance
 import Lamdu.Data.Infer.Context (Context)
 import Lamdu.Data.Infer.GuidAliases (GuidAliases)
 import Lamdu.Data.Infer.RefData (UFExprs, LoadedBody)
-import Lamdu.Data.Infer.RefTags (ExprRef, TagRule, TagExpr)
+import Lamdu.Data.Infer.RefTags (ExprRef, ParamRef, TagRule, TagExpr)
 import Lamdu.Data.Infer.Rule.Types (RuleRef, RuleMap)
 import Lamdu.Data.Infer.Trigger.Types (Fired)
 import qualified Control.Lens as Lens
@@ -29,7 +28,7 @@ import qualified Data.OpaqueRef as OR
 import qualified Lamdu.Data.Infer.Context as Context
 
 data Error def
-  = VarEscapesScope Guid
+  = VarEscapesScope (ParamRef def)
   | VarNotInScope
   | InfiniteExpr (ExprRef def)
   | CompositeTag (ExprRef def)

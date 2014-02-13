@@ -3,10 +3,9 @@ module Lamdu.Data.Infer.MakeTypes (makeTV) where
 import Control.Applicative (Applicative(..), (<$>))
 import Control.Lens.Operators
 import Control.Monad (void, when)
-import Data.Store.Guid (Guid)
 import Lamdu.Data.Infer.Monad (Infer, Error(..))
 import Lamdu.Data.Infer.RefData (Scope, LoadedBody, scopeNormalizeParamRefs)
-import Lamdu.Data.Infer.RefTags (ExprRef)
+import Lamdu.Data.Infer.RefTags (ExprRef, ParamRef)
 import Lamdu.Data.Infer.Rule (verifyTagId)
 import Lamdu.Data.Infer.TypedValue (TypedValue(..), tvVal, tvType)
 import Lamdu.Data.Infer.Unify (unify, forceLam, unifyBody)
@@ -25,10 +24,10 @@ import qualified Lamdu.Data.Infer.Rule.GetField as RuleGetField
 import qualified Lamdu.Data.Infer.Rule.Uncircumsize as RuleUncircumsize
 import qualified Lamdu.Data.Infer.Trigger as Trigger
 
-scopeLookup :: Scope def -> Guid -> Infer def (ExprRef def)
-scopeLookup scope guid = do
+scopeLookup :: Scope def -> ParamRef def -> Infer def (ExprRef def)
+scopeLookup scope param = do
   scopeNorm <- InferM.liftGuidAliases $ scopeNormalizeParamRefs scope
-  guidRep <- InferM.liftGuidAliases $ GuidAliases.getRep guid
+  guidRep <- InferM.liftGuidAliases $ GuidAliases.find param
   case scopeNorm ^. RefData.scopeMap . Lens.at guidRep of
     Nothing -> InferM.error VarNotInScope
     Just ref -> pure ref
@@ -72,9 +71,9 @@ makeApplyTV applyScope apply@(Expr.Apply func arg) dest = do
     UFData.read (func ^. tvType)
     & InferM.liftUFExprs
     <&> (^. RefData.rdScope)
-  (piGuid, piParamType, piResultRef) <- forceLam Expr.KType funcScope $ func ^. tvType
+  (piParam, piParamType, piResultRef) <- forceLam Expr.KType funcScope $ func ^. tvType
   void $ unify (arg ^. tvType) piParamType
-  RuleApply.make piGuid (arg ^. tvVal) piResultRef (dest ^. tvType)
+  RuleApply.make piParam (arg ^. tvVal) piResultRef (dest ^. tvType)
   void . unify (dest ^. tvVal) =<< maybeCircumsize applyScope func (Expr.BodyApply apply)
 
 addTagVerification :: ExprRef def -> Infer def ()
@@ -92,11 +91,11 @@ makeGetFieldTV scope getField@(Expr.GetField record tag) dest = do
 
 makeLambdaType ::
   Ord def =>
-  Scope def -> Guid -> TypedValue def -> TypedValue def ->
+  Scope def -> ParamRef def -> TypedValue def -> TypedValue def ->
   Infer def (LoadedBody def (ExprRef def))
-makeLambdaType scope paramGuid paramType result = do
+makeLambdaType scope paramRef paramType result = do
   unifyBody (paramType ^. tvType) scope (ExprLens.bodyType # ())
-  return $ makePiTypeOfLam paramGuid paramType result
+  return $ makePiTypeOfLam paramRef paramType result
 
 makeRecordType ::
   Ord def =>
@@ -139,9 +138,9 @@ makeTV scope body dest =
   Expr.BodyLeaf (Expr.GetVariable (Expr.DefinitionRef (Load.LoadedDef _ ref))) -> do
     loadGivenVal
     void $ unify (dest ^. tvType) ref
-  Expr.BodyLeaf (Expr.GetVariable (Expr.ParameterRef guid)) -> do
+  Expr.BodyLeaf (Expr.GetVariable (Expr.ParameterRef param)) -> do
     loadGivenVal
-    void $ unify (dest ^. tvType) =<< scopeLookup scope guid
+    void $ unify (dest ^. tvType) =<< scopeLookup scope param
   -- Complex:
   Expr.BodyGetField getField -> makeGetFieldTV scope getField dest
   Expr.BodyApply apply -> makeApplyTV scope apply dest

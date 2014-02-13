@@ -64,17 +64,17 @@ mGuidAliases = Lens.zoom Context.guidAliases
 
 canonizeGuid ::
   MonadA m =>
-  StoredGuids def -> Guid -> StateT (GuidAliases def) m Guid
-canonizeGuid storedGuidsOfRefs guid = do
-  guidRep <- GuidAliases.getRep guid
+  StoredGuids def -> ParamRef def -> StateT (GuidAliases def) m Guid
+canonizeGuid storedGuidsOfRefs paramRef = do
+  paramRep <- GuidAliases.find paramRef
   storedExistingGuids <- do
     aliases <- State.get
     return $ filter ((`GuidAliases.hasGuid` aliases) . snd) storedGuidsOfRefs
   storedGuidsOfReps <-
     storedExistingGuids
     & Lens.traverse . Lens._1 %%~ GuidAliases.find
-  case lookup guidRep storedGuidsOfReps of
-    Nothing -> State.gets (GuidAliases.guidOfRep guidRep)
+  case lookup paramRep storedGuidsOfReps of
+    Nothing -> State.gets (GuidAliases.guidOfRep paramRep)
     Just storedGuid -> return storedGuid
 
 deref :: StoredGuids def -> ExprRef def -> M def (Expr def)
@@ -97,11 +97,9 @@ derefScope storedGuids =
   fmap Map.fromList . traverse each . (^@.. Lens.itraversed)
   where
     each (paramRef, ref) = do
-      paramRep <- mGuidAliases $ GuidAliases.find paramRef
-      guid <- mGuidAliases . State.gets $ GuidAliases.guidOfRep paramRep
-      cGuid <- mGuidAliases $ canonizeGuid storedGuids guid
+      guid <- mGuidAliases $ canonizeGuid storedGuids paramRef
       typeExpr <- deref storedGuids ref
-      return (cGuid, typeExpr)
+      return (guid, typeExpr)
 
 expr ::
   Expr.Expr ldef Guid (TypedValue def, a) ->

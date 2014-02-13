@@ -5,7 +5,7 @@ module Lamdu.Data.Infer.Rule.Types
   , GetFieldPhase1(..), gf1GetFieldRecordTypeFields, gf1GetFieldType
   , GetFieldPhase2(..), gf2Tag, gf2TagRef, gf2TypeRef, gf2MaybeMatchers
   , ExprLink(..), applyExprLinkDest, applyExprLinkDestAncestors
-  , Apply(..), aPiGuid, aArgVal, aLinkedExprs, aLinkedNames
+  , Apply(..), aPiParam, aArgVal, aLinkedExprs, aLinkedNames
   , Uncircumsize(..), uValRef, uApplicantValRef, uUncircumsizedBody
   , Rule(..), ruleTriggersIn, ruleContent
   , RuleContent(..)
@@ -66,7 +66,7 @@ Lens.makeLenses ''ExprLink
 derive makeBinary ''ExprLink
 
 data Apply def = Apply
-  { _aPiGuid :: Guid
+  { _aPiParam :: ParamRef def
   , _aArgVal :: ExprRef def
   -- unmaintained pi-result to apply type respective/matching subexprs
   , _aLinkedExprs :: OR.RefMap (TagExpr def) (ExprLink def)

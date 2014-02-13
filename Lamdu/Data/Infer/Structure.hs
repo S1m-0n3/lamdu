@@ -15,6 +15,7 @@ import qualified Lamdu.Data.Expr.Utils as ExprUtil
 import qualified Lamdu.Data.Infer as Infer
 import qualified Lamdu.Data.Infer.Context as Context
 import qualified Lamdu.Data.Infer.Deref as Deref
+import qualified Lamdu.Data.Infer.GuidAliases as GuidAliases
 import qualified Lamdu.Data.Infer.Load as Load
 import qualified Lamdu.Data.Infer.RefData as RefData
 
@@ -36,7 +37,9 @@ addToHole (TypedValue valRef typRef) = do
   when (Lens.has (RefData.rdBody . ExprLens.bodyHole) valData) $ do
     -- Both the "stored" and inferred val are holes, time to fill some structure:
     -- NOTE: safe to use 'deref []' because we don't care about the guids at all.
-    typExpr <- Deref.deref [] typRef <&> void
+    typExpr <-
+      Deref.deref [] typRef <&> void
+      >>= ExprLens.exprPar %%~ Lens.zoom Context.guidAliases . GuidAliases.getRep
     structureRef <- Load.exprIntoContext scope (ExprUtil.structureForType typExpr)
     _ <- mapStateT assertSuccess $ Infer.unifyRefs valRef structureRef
     return ()

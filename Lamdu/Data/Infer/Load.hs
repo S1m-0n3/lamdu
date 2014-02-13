@@ -44,10 +44,10 @@ exprIntoContext ::
 exprIntoContext scope (Expr.Expr body ()) = do
   newBody <-
     case body of
-    Expr.BodyLam (Expr.Lam k paramGuid paramType result) -> do
+    Expr.BodyLam (Expr.Lam k paramIdRef paramType result) -> do
       paramTypeRef <- exprIntoContext scope paramType
-      paramIdRep <- Lens.zoom Context.guidAliases $ GuidAliases.getRep paramGuid
-      Expr.BodyLam . Expr.Lam k paramGuid paramTypeRef <$>
+      paramIdRep <- Lens.zoom Context.guidAliases $ GuidAliases.find paramIdRef
+      Expr.BodyLam . Expr.Lam k paramIdRep paramTypeRef <$>
         exprIntoContext (scope & RefData.scopeMap . Lens.at paramIdRep .~ Just paramTypeRef) result
     -- TODO: Assert parameterRefs are not out of scope here
     _ -> body & Lens.traverse %%~ exprIntoContext scope
@@ -76,7 +76,10 @@ load ::
   (Ord def, MonadA m) =>
   Loader def m -> Expr.Expr def Guid a ->
   T def m (LoadedExpr def a)
-load loader expr = expr & ExprLens.exprDef %%~ toLoadedDef
+load loader expr =
+  expr
+  & ExprLens.exprDef %%~ toLoadedDef
+  >>= ExprLens.exprPar %%~ Lens.zoom Context.guidAliases . GuidAliases.getRep
   where
     toLoadedDef def = LoadedDef def . (^. tvType) <$> loadDefTVIfNeeded def
     loadDefTVIfNeeded def = do

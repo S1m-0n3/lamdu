@@ -53,25 +53,25 @@ checkDirectlyTag refData
   | otherwise = Nothing
 
 checkParameterRef :: ParamRef def -> RefData def -> Infer def (Maybe (Fired def))
-checkParameterRef triggerGuidRef refData
+checkParameterRef triggerParamRef refData
   | Lens.nullOf (RefData.rdScope . RefData.scopeParamRefs) refData =
     -- Scope is empty so this cannot be a parameter Ref
-    answer triggerGuidRef TheParameterOutOfScope
+    answer triggerParamRef TheParameterOutOfScope
   | otherwise = do
-    triggerGuidRep <- InferM.liftGuidAliases $ GuidAliases.find triggerGuidRef
+    triggerParamRep <- InferM.liftGuidAliases $ GuidAliases.find triggerParamRef
     -- Our caller must hand us a normalized scope
-    if triggerGuidRep `notElem` (refData ^.. RefData.rdScope . RefData.scopeParamRefs)
-      then answer triggerGuidRep TheParameterOutOfScope
+    if triggerParamRep `notElem` (refData ^.. RefData.rdScope . RefData.scopeParamRefs)
+      then answer triggerParamRep TheParameterOutOfScope
       else
         case refData ^. RefData.rdBody of
-        Expr.BodyLeaf (Expr.GetVariable (Expr.ParameterRef guid)) -> do
-          guidRep <- InferM.liftGuidAliases $ GuidAliases.getRep guid
-          answer triggerGuidRep $
-            if triggerGuidRep == guidRep
+        Expr.BodyLeaf (Expr.GetVariable (Expr.ParameterRef paramRef)) -> do
+          paramRep <- InferM.liftGuidAliases $ GuidAliases.find paramRef
+          answer triggerParamRep $
+            if triggerParamRep == paramRep
             then IsTheParameterRef
             else NotTheParameterRef
         Expr.BodyLeaf Expr.Hole -> return Nothing
-        _ -> answer triggerGuidRep NotTheParameterRef
+        _ -> answer triggerParamRep NotTheParameterRef
   where
     answer ref = return . Just . FiredParameterRef ref
 

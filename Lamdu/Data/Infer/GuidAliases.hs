@@ -53,10 +53,12 @@ getRep guid = do
 hasGuid :: Guid -> GuidAliases def -> Bool
 hasGuid guid aliases = Map.member guid (aliases ^. gaGuidRefs)
 
-unify :: MonadA m => Guid -> Guid -> StateT (GuidAliases def) m (ParamRef def, Guid)
+unify ::
+  MonadA m =>
+  ParamRef def -> ParamRef def -> StateT (GuidAliases def) m (ParamRef def, Guid)
 unify x y = do
-  xRep <- getRep x
-  yRep <- getRep y
+  xRep <- find x
+  yRep <- find y
   Lens.zoom gaUF $ do
     (rep, result) <- UFData.unifyRefs xRep yRep
     case result of

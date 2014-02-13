@@ -15,11 +15,10 @@ import Data.Foldable (traverse_)
 import Data.Monoid (Monoid(..))
 import Data.Monoid.Applicative (ApplicativeMonoid(..))
 import Data.Set (Set)
-import Data.Store.Guid (Guid)
 import Data.Traversable (sequenceA)
 import Lamdu.Data.Infer.Monad (Infer, Error(..))
 import Lamdu.Data.Infer.RefData (RefData(..), Scope(..), LoadedBody, scopeNormalizeParamRefs)
-import Lamdu.Data.Infer.RefTags (ExprRef, TagParam, TagRule)
+import Lamdu.Data.Infer.RefTags (ExprRef, ParamRef, TagParam, TagRule)
 import Lamdu.Data.Infer.Trigger (Trigger)
 import System.Random (Random, random)
 import qualified Control.Lens as Lens
@@ -44,7 +43,7 @@ forceLam ::
   Ord def =>
   Expr.Kind -> RefData.Scope def ->
   ExprRef def ->
-  Infer def (Guid, ExprRef def, ExprRef def)
+  Infer def (ParamRef def, ExprRef def, ExprRef def)
 forceLam k lamScope destRef = do
   oldData <- InferM.liftUFExprs $ UFData.read destRef
   case oldData ^? RefData.rdBody . ExprLens.bodyKindedLam k of
@@ -57,7 +56,7 @@ forceLam k lamScope destRef = do
       let lamResultScope = lamScope & RefData.scopeMap . Lens.at newParamRep .~ Just newParamTypeRef
       newResultTypeRef <- InferM.liftContext . Context.fresh lamResultScope $ ExprLens.bodyHole # ()
       let
-        res = (newGuid, newParamTypeRef, newResultTypeRef)
+        res = (newParamRep, newParamTypeRef, newResultTypeRef)
         body = ExprLens.bodyKindedLam k # res
       unifyBody destRef lamScope body
       return res
@@ -87,13 +86,13 @@ data HoleConstraints def = HoleConstraints
   }
 
 -- You must apply this recursively
-checkHoleConstraints :: HoleConstraints def -> Expr.Body ldef Guid (ExprRef def) -> Infer def ()
+checkHoleConstraints :: HoleConstraints def -> Expr.Body ldef (ParamRef def) (ExprRef def) -> Infer def ()
 checkHoleConstraints (HoleConstraints unusableSet _removeDef) body =
   case body of
-  Expr.BodyLeaf (Expr.GetVariable (Expr.ParameterRef paramGuid)) -> do
-    paramIdRep <- getRep paramGuid
+  Expr.BodyLeaf (Expr.GetVariable (Expr.ParameterRef paramRef)) -> do
+    paramIdRep <- getRep paramRef
     when (unusableSet ^. Lens.contains paramIdRep) $
-      InferM.error $ VarEscapesScope paramGuid
+      InferM.error $ VarEscapesScope paramRef
   -- Expensive assertion
   Expr.BodyLam lam -> do
     paramIdRep <- getRep (lam ^. Expr.lamParamId)
@@ -101,7 +100,7 @@ checkHoleConstraints (HoleConstraints unusableSet _removeDef) body =
       error "checkHoleConstraints: Shadowing detected"
   _ -> return ()
   where
-    getRep = InferM.liftGuidAliases . GuidAliases.getRep
+    getRep = InferM.liftGuidAliases . GuidAliases.find
 
 type U def = DecycleT (ExprRef def) (Infer def)
 
@@ -122,7 +121,7 @@ noConstraints (HoleConstraints unusableScopeReps removeDef) =
 
 applyHoleConstraints ::
   Eq def => HoleConstraints def ->
-  Expr.Body ldef Guid (ExprRef def) -> Scope def ->
+  Expr.Body ldef (ParamRef def) (ExprRef def) -> Scope def ->
   WU def (Scope def)
 applyHoleConstraints holeConstraints body oldScope = do
   wuInfer $ checkHoleConstraints holeConstraints body
@@ -184,14 +183,14 @@ mergeScopeBodies xScope xBody yScope yBody =
     zoomGuidAliases = uInfer . InferM.liftGuidAliases
     handleMatchResult Nothing = uInfer . InferM.error $ Mismatch xBody yBody
     handleMatchResult (Just _) = return ()
-    matchLamResult xGuid yGuid xRef yRef =
-      ( snd <$> zoomGuidAliases (GuidAliases.unify xGuid yGuid)
+    matchLamResult xParam yParam xRef yRef =
+      ( fst <$> zoomGuidAliases (GuidAliases.unify xParam yParam)
       , unifyRecurse xRef yRef
       )
-    matchGetPars xGuid yGuid = zoomGuidAliases $ do
-      xRep <- GuidAliases.getRep xGuid
-      yRep <- GuidAliases.getRep yGuid
-      return $ yGuid <$ guard (xRep == yRep)
+    matchGetPars xParam yParam = zoomGuidAliases $ do
+      xRep <- GuidAliases.find xParam
+      yRep <- GuidAliases.find yParam
+      return $ yRep <$ guard (xRep == yRep)
 
 mergeRefData ::
   Ord def => RefData def -> RefData def ->
