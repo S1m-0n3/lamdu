@@ -41,6 +41,7 @@ import Data.Maybe.Utils (unsafeUnjust)
 import Data.Store.Guid (Guid)
 import Data.Store.IRef (Tag)
 import Data.Typeable (Typeable)
+import Lamdu.Data.Expr (Expr)
 import Lamdu.Data.Expr.IRef (DefIM)
 import Lamdu.Data.Infer.Deref (DerefedTV)
 import Lamdu.Data.Infer.Load (Loader(..))
@@ -106,9 +107,9 @@ eitherTToMaybeT = MaybeT . fmap eitherToMaybe . runEitherT
 memoInferAt ::
   (Typeable a, Binary a, Typeable m, MonadA m) =>
   Infer.TypedValue (DefIM m) ->
-  LoadedExpr m a ->
+  Expr (InferLoad.LoadedDef (DefIM m)) Guid a ->
   StateT (InferContext m) (MaybeT (CT m))
-  (LoadedExpr m (InferDeref.DerefedTV (DefIM m), a))
+  (Expr (InferLoad.LoadedDef (DefIM m)) Guid (Infer.TypedValue (DefIM m), a))
 memoInferAt tv expr = do
   -- TV uniquely identifies the position we're inferring to (stvScope
   -- is redundant to it):
@@ -126,9 +127,10 @@ memoInferH ::
   ( Typeable m, MonadA m
   , Typeable a, Binary a
   ) =>
-  Infer.M (DefIM m) (LoadedExpr m (Infer.TypedValue (DefIM m), a)) ->
+  Infer.M (DefIM m)
+    (Expr (Infer.LoadedDef (DefIM m)) Guid (Infer.TypedValue (DefIM m), a)) ->
   StateT (InferContext m) (MaybeT (CT m))
-  (LoadedExpr m (DerefedTV (DefIM m), a))
+    (Expr (Infer.LoadedDef (DefIM m)) Guid (Infer.TypedValue (DefIM m), a))
 memoInferH infer = do
   k <- Lens.use icHashKey
   Lens.zoom icContext .

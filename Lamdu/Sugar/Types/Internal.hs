@@ -13,8 +13,10 @@ import Control.Lens.Operators
 import Control.Monad.Trans.State (StateT, runState)
 import Data.Binary (Binary)
 import Data.Cache (Cache)
+import Data.Store.Guid (Guid)
 import Data.Store.Transaction (Transaction)
 import Data.Typeable (Typeable)
+import Lamdu.Data.Expr (Expr)
 import Lamdu.Data.Expr.IRef (DefIM)
 import Lamdu.Data.Infer.Deref (DerefedTV)
 import qualified Control.Lens as Lens
@@ -34,7 +36,7 @@ type Inferred m = DerefedTV (DefIM m)
 data NoStored = NoStored
 type Stored m = ExprIRef.ExprProperty m
 
-type LoadedExpr m = Load.LoadedExpr (DefIM m)
+type LoadedExpr m = Expr (Infer.LoadedDef (DefIM m)) Guid
 
 newtype StorePoint t = StorePoint { unStorePoint :: ExprIRef.ExprI t }
   deriving (Eq, Ord, Binary, Typeable)

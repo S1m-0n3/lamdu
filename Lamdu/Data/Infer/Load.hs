@@ -16,6 +16,7 @@ import Control.Monad.Trans.State (StateT(..))
 import Control.MonadA (MonadA)
 import Data.Monoid (Monoid(..))
 import Data.Store.Guid (Guid)
+import Lamdu.Data.Expr (Expr(..))
 import Lamdu.Data.Infer.Context (Context)
 import Lamdu.Data.Infer.RefData (LoadedDef(..), ldDef, ldType, LoadedExpr)
 import Lamdu.Data.Infer.RefTags (ExprRef)
@@ -29,7 +30,7 @@ import qualified Lamdu.Data.Infer.GuidAliases as GuidAliases
 import qualified Lamdu.Data.Infer.RefData as RefData
 
 newtype Loader def m = Loader
-  { loadDefType :: def -> m (Expr.Expr def Guid ())
+  { loadDefType :: def -> m (Expr def Guid ())
     -- TODO: For synonyms we'll need loadDefVal
   }
 
@@ -41,7 +42,7 @@ type T def m = StateT (Context def) (EitherT (Error def) m)
 exprIntoContext ::
   (Ord def, MonadA m) => RefData.Scope def -> LoadedExpr def () ->
   StateT (Context def) m (ExprRef def)
-exprIntoContext scope (Expr.Expr body ()) = do
+exprIntoContext scope (Expr body ()) = do
   newBody <-
     case body of
     Expr.BodyLam (Expr.Lam k paramIdRef paramType result) -> do
@@ -54,13 +55,16 @@ exprIntoContext scope (Expr.Expr body ()) = do
   Context.fresh scope newBody
 
 -- Error includes untyped def use
-loadDefTypeIntoRef :: (Ord def, MonadA m) => Loader def m -> def -> T def m (ExprRef def)
+loadDefTypeIntoRef ::
+  (Ord def, MonadA m) =>
+  Loader def m -> def -> T def m (ExprRef def)
 loadDefTypeIntoRef loader@(Loader loadType) def = do
   loadedDefType <- lift . lift $ loadType def
   when (Lens.has ExprLens.holePayloads loadedDefType) .
     lift . Either.left $ LoadUntypedDef def
-  exprIntoContext (RefData.Scope mempty Nothing) =<<
-    load loader loadedDefType
+  load loader loadedDefType
+    >>= ExprLens.exprPar %%~ Lens.zoom Context.guidAliases . GuidAliases.getRep
+    >>= exprIntoContext (RefData.Scope mempty Nothing)
 
 newDefinition :: (MonadA m, Ord def) => def -> StateT (Context def) m (TypedValue def)
 newDefinition def = do
@@ -73,13 +77,12 @@ newDefinition def = do
     setRef _ (Just _) = error "newDefinition overrides existing def type"
 
 load ::
-  (Ord def, MonadA m) =>
-  Loader def m -> Expr.Expr def Guid a ->
-  T def m (LoadedExpr def a)
+  (MonadA m, Ord def) =>
+  Loader def m -> Expr def Guid a ->
+  T def m (Expr (LoadedDef def) Guid a)
 load loader expr =
   expr
   & ExprLens.exprDef %%~ toLoadedDef
-  >>= ExprLens.exprPar %%~ Lens.zoom Context.guidAliases . GuidAliases.getRep
   where
     toLoadedDef def = LoadedDef def . (^. tvType) <$> loadDefTVIfNeeded def
     loadDefTVIfNeeded def = do

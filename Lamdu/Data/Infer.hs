@@ -16,6 +16,8 @@ import Control.Applicative (Applicative(..), (<$>))
 import Control.Lens.Operators
 import Control.Monad.Trans.State (StateT)
 import Control.MonadA (MonadA)
+import Data.Store.Guid (Guid)
+import Lamdu.Data.Expr (Expr(..))
 import Lamdu.Data.Infer.Context (Context)
 import Lamdu.Data.Infer.MakeTypes (makeTV)
 import Lamdu.Data.Infer.Monad (Infer, Error(..))
@@ -23,8 +25,10 @@ import Lamdu.Data.Infer.RefData (Scope(..), LoadedExpr)
 import Lamdu.Data.Infer.RefTags (ExprRef)
 import Lamdu.Data.Infer.TypedValue (TypedValue(..), tvVal, tvType)
 import qualified Control.Lens as Lens
+import qualified Control.Monad.Trans.State as State
 import qualified Data.UnionFind.WithData as UFData
 import qualified Lamdu.Data.Expr as Expr
+import qualified Lamdu.Data.Expr.Lens as ExprLens
 import qualified Lamdu.Data.Infer.Context as Context
 import qualified Lamdu.Data.Infer.GuidAliases as GuidAliases
 import qualified Lamdu.Data.Infer.Load as Load
@@ -75,9 +79,13 @@ infer scope expr = InferMRun.run $ do
 inferAt ::
   Ord def =>
   TypedValue def -> LoadedExpr def a ->
-  M def (LoadedExpr def (TypedValue def, a))
+  M def (Expr (RefData.LoadedDef def) Guid (TypedValue def, a))
 inferAt tv expr =
-  InferMRun.run $ exprIntoTV tv expr
+  InferMRun.run $
+    exprIntoTV tv expr
+    >>=
+      (InferM.liftContext . Lens.zoom Context.guidAliases) .
+      (Lens.traverseOf ExprLens.exprPar (State.gets . GuidAliases.guidOfRep))
 
 exprIntoTV ::
   Ord def =>

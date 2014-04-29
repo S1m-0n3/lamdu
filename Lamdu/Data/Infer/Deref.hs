@@ -20,6 +20,7 @@ import Data.Map (Map)
 import Data.Store.Guid (Guid)
 import Data.Traversable (traverse)
 import Data.Typeable (Typeable)
+import Lamdu.Data.Expr (Expr(..))
 import Lamdu.Data.Infer.Context (Context)
 import Lamdu.Data.Infer.GuidAliases (GuidAliases)
 import Lamdu.Data.Infer.RefTags (ExprRef, ParamRef, TagParam)
@@ -39,7 +40,7 @@ import qualified Lamdu.Data.Infer.RefData as RefData
 data Error def = InfiniteExpr (ExprRef def)
   deriving (Show, Eq, Ord)
 
-type Expr def = RefData.LoadedExpr def (ExprRef def)
+type DerefExpr def = Expr (RefData.LoadedDef def) Guid (ExprRef def)
 
 -- TODO: Make this a newtype and maybe rename to Context
 -- | The stored guid names we know for paremeter refs (different
@@ -47,9 +48,9 @@ type Expr def = RefData.LoadedExpr def (ExprRef def)
 type StoredGuids def = [(ParamRef def, Guid)]
 
 data DerefedTV def = DerefedTV
-  { _dValue :: Expr def
-  , _dType :: Expr def
-  , _dScope :: Map Guid (Expr def) -- TODO: Make a separate derefScope action instead of this
+  { _dValue :: DerefExpr def
+  , _dType :: DerefExpr def
+  , _dScope :: Map Guid (DerefExpr def) -- TODO: Make a separate derefScope action instead of this
   , _dTV :: TypedValue def
   , _dContext :: StoredGuids def
   } deriving (Typeable)
@@ -77,7 +78,7 @@ canonizeGuid storedGuidsOfRefs paramRef = do
     Nothing -> State.gets (GuidAliases.guidOfRep paramRep)
     Just storedGuid -> return storedGuid
 
-deref :: StoredGuids def -> ExprRef def -> M def (Expr def)
+deref :: StoredGuids def -> ExprRef def -> M def (DerefExpr def)
 deref storedGuids =
   decycle go
   where
@@ -87,12 +88,12 @@ deref storedGuids =
       refData ^. RefData.rdBody
         & Lens.traverse %%~ recurse
         >>= ExprLens.bodyPar %%~ mGuidAliases . canonizeGuid storedGuids
-        <&> (`Expr.Expr` ref)
+        <&> (`Expr` ref)
 
 derefScope ::
   StoredGuids def ->
   OR.RefMap (TagParam def) (ExprRef def) ->
-  M def (Map Guid (Expr def))
+  M def (Map Guid (DerefExpr def))
 derefScope storedGuids =
   fmap Map.fromList . traverse each . (^@.. Lens.itraversed)
   where
@@ -102,12 +103,12 @@ derefScope storedGuids =
       return (guid, typeExpr)
 
 expr ::
-  Expr.Expr ldef Guid (TypedValue def, a) ->
-  M def (Expr.Expr ldef Guid (M def (DerefedTV def), a))
+  Expr ldef Guid (TypedValue def, a) ->
+  M def (Expr ldef Guid (M def (DerefedTV def), a))
 expr =
   go []
   where
-    go storedGuids (Expr.Expr storedBody (tv, pl)) = do
+    go storedGuids (Expr storedBody (tv, pl)) = do
       newStoredGuids <-
         case storedBody ^? Expr._BodyLam . Expr.lamParamId of
         Nothing -> return storedGuids
@@ -125,11 +126,11 @@ expr =
             <*> pure storedGuids
       storedBody
         & Lens.traverse %%~ go newStoredGuids
-        <&> (`Expr.Expr` (derefTV, pl))
+        <&> (`Expr` (derefTV, pl))
 
 entireExpr ::
-  Expr.Expr ldef Guid (TypedValue def, a) ->
-  M def (Expr.Expr ldef Guid (DerefedTV def, a))
+  Expr ldef Guid (TypedValue def, a) ->
+  M def (Expr ldef Guid (DerefedTV def, a))
 entireExpr = (>>= Lens.sequenceOf (Lens.traverse . Lens._1)) . expr
 ------- Lifted errors:
 
